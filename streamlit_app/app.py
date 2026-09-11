@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import joblib
+import plotly.graph_objects as go
 from pathlib import Path
 
 st.set_page_config(
@@ -60,12 +61,13 @@ st.markdown(
         margin: 0;
     }
 
-    .glass-card {
-        background: rgba(255, 255, 255, 0.92);
-        border-radius: 16px;
-        padding: 1.4rem 1.6rem;
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
-        margin-bottom: 1.2rem;
+    /* Style every bordered container (st.container(border=True)) as a glass card */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background: rgba(255, 255, 255, 0.94) !important;
+        border-radius: 16px !important;
+        border: none !important;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25) !important;
+        padding: 0.4rem 0.4rem !important;
     }
 
     .badge {
@@ -77,14 +79,25 @@ st.markdown(
         margin-bottom: 0.6rem;
     }
 
-    .badge-supported {
-        background: #dcf5e0;
-        color: #1e7d32;
+    .badge-supported { background: #dcf5e0; color: #1e7d32; }
+    .badge-limited { background: #fff2d9; color: #a15c00; }
+
+    .recommend-sell {
+        background: #fde3e3;
+        color: #a11212;
+        border-radius: 12px;
+        padding: 0.9rem 1.1rem;
+        font-weight: 600;
+        font-size: 1.05rem;
     }
 
-    .badge-limited {
-        background: #fff2d9;
-        color: #a15c00;
+    .recommend-hold {
+        background: #e0f5e4;
+        color: #1e7d32;
+        border-radius: 12px;
+        padding: 0.9rem 1.1rem;
+        font-weight: 600;
+        font-size: 1.05rem;
     }
 
     div[data-testid="stMetric"] {
@@ -97,9 +110,7 @@ st.markdown(
         border-radius: 10px !important;
     }
 
-    footer, header {
-        visibility: hidden;
-    }
+    footer, header { visibility: hidden; }
 
     .app-footer {
         text-align: center;
@@ -135,45 +146,47 @@ def load_model():
 
 @st.cache_data
 def load_full_snapshot():
-    # Full feature set, available only for the 5 crops the crash model was trained on
     df = pd.read_csv(APP_DIR / "latest_snapshot.csv")
     df["price_date"] = pd.to_datetime(df["price_date"])
     return df
 
 @st.cache_data
 def load_all_crops_snapshot():
-    # Covers every crop and state in the raw Agmarknet dataset
     df = pd.read_csv(APP_DIR / "all_crops_snapshot.csv")
     df["latest_date"] = pd.to_datetime(df["latest_date"])
+    return df
+
+@st.cache_data
+def load_price_history():
+    df = pd.read_csv(APP_DIR / "price_history.csv")
+    df["price_date"] = pd.to_datetime(df["price_date"])
     return df
 
 model, FEATURES, THRESHOLD = load_model()
 full_snapshot = load_full_snapshot()
 all_snapshot = load_all_crops_snapshot()
+history = load_price_history()
 
 # ---------------------------------------------------------------------------
 # Selection controls
 # ---------------------------------------------------------------------------
 
-st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+with st.container(border=True):
+    col1, col2 = st.columns(2)
 
-col1, col2 = st.columns(2)
+    with col1:
+        commodity = st.selectbox("Crop", sorted(all_snapshot["commodity"].unique()))
 
-with col1:
-    commodity = st.selectbox("Crop", sorted(all_snapshot["commodity"].unique()))
+    filtered = all_snapshot[all_snapshot["commodity"] == commodity]
 
-filtered = all_snapshot[all_snapshot["commodity"] == commodity]
+    with col2:
+        state = st.selectbox("State", sorted(filtered["state"].unique()))
 
-with col2:
-    state = st.selectbox("State", sorted(filtered["state"].unique()))
+    filtered = filtered[filtered["state"] == state]
 
-filtered = filtered[filtered["state"] == state]
-
-market = st.selectbox("Market (Mandi)", sorted(filtered["market_name"].unique()))
+    market = st.selectbox("Market (Mandi)", sorted(filtered["market_name"].unique()))
 
 row = filtered[filtered["market_name"] == market]
-
-st.markdown('</div>', unsafe_allow_html=True)
 
 if row.empty:
     st.warning("No data available for this combination.")
@@ -183,78 +196,138 @@ row = row.sort_values("latest_date").iloc[-1]
 is_supported = commodity in TRAINED_CROPS
 
 # ---------------------------------------------------------------------------
-# Current price snapshot (available for every crop/state)
+# Current price snapshot
 # ---------------------------------------------------------------------------
 
-st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+with st.container(border=True):
+    badge_class = "badge-supported" if is_supported else "badge-limited"
+    badge_text = "✅ Crash prediction supported" if is_supported else "⚠️ Limited data — price trend only"
+    st.markdown(f'<span class="badge {badge_class}">{badge_text}</span>', unsafe_allow_html=True)
 
-badge_class = "badge-supported" if is_supported else "badge-limited"
-badge_text = "✅ Crash prediction supported" if is_supported else "⚠️ Limited data — price trend only"
-st.markdown(f'<span class="badge {badge_class}">{badge_text}</span>', unsafe_allow_html=True)
+    st.subheader("Latest known price data")
 
-st.subheader("Latest known price data")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Modal Price (₹/Quintal)", f"{row['latest_price']:.0f}")
 
-m1, m2, m3 = st.columns(3)
-m1.metric("Modal Price (₹/Quintal)", f"{row['latest_price']:.0f}")
-
-if pd.notna(row["pct_change_7d"]):
-    m2.metric("~7-day change", f"{row['pct_change_7d']*100:.1f}%")
-else:
-    m2.metric("~7-day change", "N/A")
-
-m3.metric("As of", row["latest_date"].strftime("%d %b %Y"))
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-# ---------------------------------------------------------------------------
-# Prediction (only for the 5 crops the model was trained on)
-# ---------------------------------------------------------------------------
-
-st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-st.subheader("Prediction")
-
-if is_supported:
-    full_row = full_snapshot[
-        (full_snapshot["commodity"] == commodity)
-        & (full_snapshot["state"] == state)
-        & (full_snapshot["market_name"] == market)
-    ]
-
-    if full_row.empty:
-        st.info(
-            "This crop/market combination doesn't have enough recent price "
-            "history (needs at least 30 days of records) to compute a "
-            "reliable prediction."
-        )
+    if pd.notna(row["pct_change_7d"]):
+        m2.metric("~7-day change", f"{row['pct_change_7d']*100:.1f}%")
     else:
-        full_row = full_row.sort_values("price_date").iloc[-1]
-        X = pd.DataFrame([full_row[FEATURES]])
-        probability = model.predict_proba(X)[0, 1]
-        will_crash = probability >= THRESHOLD
+        m2.metric("~7-day change", "N/A")
 
-        if will_crash:
-            st.error(
-                f"⚠️ **High crash risk** — estimated {probability*100:.1f}% probability "
-                f"of a 15%+ price drop within 7 days."
+    m3.metric("As of", row["latest_date"].strftime("%d %b %Y"))
+
+# ---------------------------------------------------------------------------
+# Price history chart (stock-style: min-max band + modal price line)
+# ---------------------------------------------------------------------------
+
+hist = history[
+    (history["commodity"] == commodity)
+    & (history["state"] == state)
+    & (history["market_name"] == market)
+].sort_values("price_date")
+
+with st.container(border=True):
+    st.subheader("90-day price trend")
+
+    if hist.empty or len(hist) < 2:
+        st.caption("Not enough history to chart this crop/market yet.")
+    else:
+        fig = go.Figure()
+
+        fig.add_trace(go.Scatter(
+            x=pd.concat([hist["price_date"], hist["price_date"][::-1]]),
+            y=pd.concat([hist["max_price"], hist["min_price"][::-1]]),
+            fill="toself",
+            fillcolor="rgba(74, 124, 64, 0.15)",
+            line=dict(color="rgba(0,0,0,0)"),
+            hoverinfo="skip",
+            showlegend=False
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=hist["price_date"],
+            y=hist["modal_price"],
+            mode="lines",
+            line=dict(color="#2f5233", width=2.5),
+            name="Modal Price"
+        ))
+
+        fig.update_layout(
+            height=320,
+            margin=dict(l=10, r=10, t=10, b=10),
+            xaxis_title=None,
+            yaxis_title="₹ / Quintal",
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            showlegend=False
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption("Shaded band shows the daily min–max price range; the line shows the modal price.")
+
+# ---------------------------------------------------------------------------
+# Prediction + sell/hold recommendation
+# ---------------------------------------------------------------------------
+
+with st.container(border=True):
+    st.subheader("Prediction")
+
+    probability = None
+
+    if is_supported:
+        full_row = full_snapshot[
+            (full_snapshot["commodity"] == commodity)
+            & (full_snapshot["state"] == state)
+            & (full_snapshot["market_name"] == market)
+        ]
+
+        if full_row.empty:
+            st.info(
+                "This crop/market combination doesn't have enough recent price "
+                "history (needs at least 30 days of records) to compute a "
+                "reliable prediction."
             )
         else:
-            st.success(
-                f"✅ **Low crash risk** — estimated {probability*100:.1f}% probability "
-                f"of a 15%+ price drop within 7 days."
-            )
+            full_row = full_row.sort_values("price_date").iloc[-1]
+            X = pd.DataFrame([full_row[FEATURES]])
+            probability = model.predict_proba(X)[0, 1]
+            will_crash = probability >= THRESHOLD
 
-        st.progress(min(max(probability, 0.0), 1.0))
-else:
-    st.warning(
-        f"**Crash prediction isn't available for {commodity} yet.** "
-        "The model was trained only on Banana, Brinjal, Cabbage, Garlic, and "
-        "Green Chilli — the crops with enough historical price history in "
-        "this dataset to train a reliable model. Other crops are shown here "
-        "with their latest available price trend only, as a limited resource "
-        "until more training data is added."
-    )
+            if will_crash:
+                st.error(
+                    f"⚠️ **High crash risk** — estimated {probability*100:.1f}% probability "
+                    f"of a 15%+ price drop within 7 days."
+                )
+            else:
+                st.success(
+                    f"✅ **Low crash risk** — estimated {probability*100:.1f}% probability "
+                    f"of a 15%+ price drop within 7 days."
+                )
 
-st.markdown('</div>', unsafe_allow_html=True)
+            st.progress(min(max(probability, 0.0), 1.0))
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            if will_crash:
+                st.markdown(
+                    '<div class="recommend-sell">🔴 High risk — consider selling the crop now, '
+                    'before the price drops.</div>',
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    '<div class="recommend-hold">🟢 Low risk — it looks reasonably safe to hold '
+                    'the crop for now.</div>',
+                    unsafe_allow_html=True
+                )
+    else:
+        st.warning(
+            f"**Crash prediction isn't available for {commodity} yet.** "
+            "The model was trained only on Banana, Brinjal, Cabbage, Garlic, and "
+            "Green Chilli — the crops with enough historical price history in "
+            "this dataset to train a reliable model. Other crops are shown here "
+            "with their latest available price trend only, as a limited resource "
+            "until more training data is added."
+        )
 
 with st.expander("How this works"):
     st.write(
@@ -271,9 +344,77 @@ with st.expander("How this works"):
 
         **Note:** predictions are based on the most recent price data
         available in the training set for this crop/market combination,
-        not live real-time prices.
+        not live real-time prices. The sell/hold message is a simple guide,
+        not financial advice.
         """
     )
+
+# ---------------------------------------------------------------------------
+# AI assistant — answers questions about this app, this crop, prices, etc.
+# ---------------------------------------------------------------------------
+
+st.markdown("### 💬 Ask the assistant")
+
+api_key = st.secrets.get("ANTHROPIC_API_KEY", None)
+
+if not api_key:
+    st.info(
+        "The AI assistant isn't configured yet. To enable it, add your "
+        "Anthropic API key as `ANTHROPIC_API_KEY` in this app's "
+        "**Settings → Secrets** on Streamlit Cloud, then reload the app."
+    )
+else:
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    context_note = (
+        f"Currently selected on the dashboard: crop={commodity}, state={state}, "
+        f"market={market}, latest modal price={row['latest_price']:.0f} INR/quintal, "
+        f"as of {row['latest_date'].strftime('%Y-%m-%d')}. "
+        + (
+            f"Crash-risk model estimate: {probability*100:.1f}% probability of a 15%+ "
+            f"price drop in the next 7 days."
+            if probability is not None
+            else "No crash-risk model is available for this crop."
+        )
+    )
+
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    user_question = st.chat_input("Ask about this crop, this app, or crop prices in general...")
+
+    if user_question:
+        st.session_state.messages.append({"role": "user", "content": user_question})
+        with st.chat_message("user"):
+            st.markdown(user_question)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                response = client.messages.create(
+                    model="claude-sonnet-5",
+                    max_tokens=600,
+                    system=(
+                        "You are a helpful assistant embedded in a Crop Price Crash "
+                        "Predictor web app for Indian agricultural markets (mandis). "
+                        "Answer questions about crop prices, market trends, farming "
+                        "economics, and this app's data and predictions. Be concise "
+                        "and practical. Here is the current app context: " + context_note
+                    ),
+                    messages=[
+                        {"role": m["role"], "content": m["content"]}
+                        for m in st.session_state.messages
+                    ]
+                )
+                answer = response.content[0].text
+                st.markdown(answer)
+
+        st.session_state.messages.append({"role": "assistant", "content": answer})
 
 st.markdown(
     '<p class="app-footer">Data source: Agmarknet, Government of India · Model: Random Forest</p>',
