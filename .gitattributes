@@ -1,2 +1,4 @@
 *.pkl filter=lfs diff=lfs merge=lfs -text
 *.csv filter=lfs diff=lfs merge=lfs -text
+streamlit_app/*.pkl -filter -diff -merge -text
+streamlit_app/*.csv -filter -diff -merge -text
