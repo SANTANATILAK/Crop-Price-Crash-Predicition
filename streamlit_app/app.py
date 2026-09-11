@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import joblib
+from pathlib import Path
 
 st.set_page_config(
     page_title="Crop Price Crash Predictor",
@@ -8,18 +9,22 @@ st.set_page_config(
     layout="centered"
 )
 
+# Resolve paths relative to this script's own folder, since Streamlit Cloud
+# runs the app with the repo root as the working directory, not this folder.
+APP_DIR = Path(__file__).parent
+
 # ---------- Load model + data (cached so it only loads once) ----------
 
 @st.cache_resource
 def load_model():
-    model = joblib.load("crash_model_lite.pkl")
-    features = joblib.load("model_features.pkl")
-    threshold = joblib.load("crash_threshold.pkl")
+    model = joblib.load(APP_DIR / "crash_model_lite.pkl")
+    features = joblib.load(APP_DIR / "model_features.pkl")
+    threshold = joblib.load(APP_DIR / "crash_threshold.pkl")
     return model, features, threshold
 
 @st.cache_data
 def load_snapshot():
-    df = pd.read_csv("latest_snapshot.csv")
+    df = pd.read_csv(APP_DIR / "latest_snapshot.csv")
     df["price_date"] = pd.to_datetime(df["price_date"])
     return df
 
