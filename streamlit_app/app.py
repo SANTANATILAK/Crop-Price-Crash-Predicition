@@ -61,6 +61,25 @@ st.markdown(
         margin: 0;
     }
 
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(16px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    @keyframes shimmer {
+        0% { background-position: -400px 0; }
+        100% { background-position: 400px 0; }
+    }
+
+    .app-header {
+        animation: fadeInUp 0.6s ease-out;
+    }
+
     /* Style every bordered container (st.container(border=True)) as a glass card */
     [data-testid="stVerticalBlockBorderWrapper"] {
         background: rgba(255, 255, 255, 0.94) !important;
@@ -68,7 +87,20 @@ st.markdown(
         border: none !important;
         box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25) !important;
         padding: 0.4rem 0.4rem !important;
+        animation: fadeInUp 0.55s ease-out both;
+        transition: transform 0.25s ease, box-shadow 0.25s ease;
     }
+
+    [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 14px 36px rgba(0, 0, 0, 0.32) !important;
+    }
+
+    /* stagger the card entrance animations */
+    div.element-container:nth-of-type(1) [data-testid="stVerticalBlockBorderWrapper"] { animation-delay: 0.05s; }
+    div.element-container:nth-of-type(2) [data-testid="stVerticalBlockBorderWrapper"] { animation-delay: 0.15s; }
+    div.element-container:nth-of-type(3) [data-testid="stVerticalBlockBorderWrapper"] { animation-delay: 0.25s; }
+    div.element-container:nth-of-type(4) [data-testid="stVerticalBlockBorderWrapper"] { animation-delay: 0.35s; }
 
     .badge {
         display: inline-block;
@@ -77,33 +109,47 @@ st.markdown(
         font-size: 0.75rem;
         font-weight: 600;
         margin-bottom: 0.6rem;
+        animation: fadeIn 0.8s ease-out;
     }
 
     .badge-supported { background: #dcf5e0; color: #1e7d32; }
     .badge-limited { background: #fff2d9; color: #a15c00; }
 
     .recommend-sell {
-        background: #fde3e3;
+        background: linear-gradient(135deg, #fde3e3, #ffd4d4);
         color: #a11212;
         border-radius: 12px;
-        padding: 0.9rem 1.1rem;
+        padding: 1rem 1.2rem;
         font-weight: 600;
         font-size: 1.05rem;
+        animation: fadeInUp 0.5s ease-out;
+        box-shadow: 0 4px 14px rgba(161, 18, 18, 0.15);
     }
 
     .recommend-hold {
-        background: #e0f5e4;
+        background: linear-gradient(135deg, #e0f5e4, #cdf0d6);
         color: #1e7d32;
         border-radius: 12px;
-        padding: 0.9rem 1.1rem;
+        padding: 1rem 1.2rem;
         font-weight: 600;
         font-size: 1.05rem;
+        animation: fadeInUp 0.5s ease-out;
+        box-shadow: 0 4px 14px rgba(30, 125, 50, 0.15);
     }
 
     div[data-testid="stMetric"] {
         background: rgba(0,0,0,0.03);
         border-radius: 12px;
         padding: 0.6rem 0.5rem;
+        transition: background 0.2s ease;
+    }
+
+    div[data-testid="stMetric"]:hover {
+        background: rgba(74, 124, 64, 0.1);
+    }
+
+    div[data-testid="stMetricValue"] {
+        animation: fadeIn 0.7s ease-out;
     }
 
     div[data-baseweb="select"] > div {
@@ -234,35 +280,61 @@ with st.container(border=True):
     else:
         fig = go.Figure()
 
+        # min-max daily range band
         fig.add_trace(go.Scatter(
             x=pd.concat([hist["price_date"], hist["price_date"][::-1]]),
             y=pd.concat([hist["max_price"], hist["min_price"][::-1]]),
             fill="toself",
-            fillcolor="rgba(74, 124, 64, 0.15)",
+            fillcolor="rgba(74, 124, 64, 0.12)",
             line=dict(color="rgba(0,0,0,0)"),
             hoverinfo="skip",
             showlegend=False
         ))
 
+        # gradient area under the modal price line
         fig.add_trace(go.Scatter(
             x=hist["price_date"],
             y=hist["modal_price"],
             mode="lines",
-            line=dict(color="#2f5233", width=2.5),
-            name="Modal Price"
+            line=dict(color="#2f5233", width=3, shape="spline", smoothing=0.6),
+            fill="tozeroy",
+            fillcolor="rgba(74, 124, 64, 0.25)",
+            name="Modal Price",
+            hovertemplate="₹%{y:,.0f}<br>%{x|%d %b %Y}<extra></extra>"
         ))
 
+        # highlight the latest point
+        fig.add_trace(go.Scatter(
+            x=[hist["price_date"].iloc[-1]],
+            y=[hist["modal_price"].iloc[-1]],
+            mode="markers",
+            marker=dict(size=10, color="#e8871e", line=dict(width=2, color="white")),
+            showlegend=False,
+            hoverinfo="skip"
+        ))
+
+        y_min = hist["min_price"].min()
+        y_max = hist["max_price"].max()
+        pad = (y_max - y_min) * 0.1 if y_max > y_min else y_max * 0.1
+
         fig.update_layout(
-            height=320,
+            height=340,
             margin=dict(l=10, r=10, t=10, b=10),
-            xaxis_title=None,
-            yaxis_title="₹ / Quintal",
+            xaxis=dict(showgrid=False, title=None),
+            yaxis=dict(
+                title="₹ / Quintal",
+                range=[max(0, y_min - pad), y_max + pad],
+                showgrid=True,
+                gridcolor="rgba(0,0,0,0.06)"
+            ),
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
-            showlegend=False
+            showlegend=False,
+            hovermode="x unified",
+            transition=dict(duration=500, easing="cubic-in-out")
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         st.caption("Shaded band shows the daily min–max price range; the line shows the modal price.")
 
 # ---------------------------------------------------------------------------
@@ -304,7 +376,36 @@ with st.container(border=True):
                     f"of a 15%+ price drop within 7 days."
                 )
 
-            st.progress(min(max(probability, 0.0), 1.0))
+            gauge_color = "#c0392b" if will_crash else "#1e7d32"
+
+            gauge = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=probability * 100,
+                number={"suffix": "%", "font": {"size": 34, "color": gauge_color}},
+                gauge={
+                    "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#888"},
+                    "bar": {"color": gauge_color, "thickness": 0.3},
+                    "bgcolor": "white",
+                    "borderwidth": 0,
+                    "steps": [
+                        {"range": [0, 40], "color": "rgba(30,125,50,0.15)"},
+                        {"range": [40, 70], "color": "rgba(230,170,30,0.18)"},
+                        {"range": [70, 100], "color": "rgba(192,57,43,0.18)"}
+                    ],
+                    "threshold": {
+                        "line": {"color": gauge_color, "width": 3},
+                        "thickness": 0.8,
+                        "value": THRESHOLD * 100
+                    }
+                }
+            ))
+            gauge.update_layout(
+                height=220,
+                margin=dict(l=20, r=20, t=20, b=10),
+                paper_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#2f3e2a")
+            )
+            st.plotly_chart(gauge, use_container_width=True, config={"displayModeBar": False})
 
             st.markdown("<br>", unsafe_allow_html=True)
             if will_crash:
