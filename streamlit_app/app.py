@@ -2,522 +2,210 @@ import streamlit as st
 import pandas as pd
 import joblib
 import plotly.graph_objects as go
+import plotly.express as px
 from pathlib import Path
 
-st.set_page_config(
-    page_title="Crop Price Crash Predictor",
-    page_icon="🌾",
-    layout="centered"
-)
+st.set_page_config(page_title="Crop Price Crash Predictor", page_icon="🌾", layout="wide", initial_sidebar_state="expanded")
 
 APP_DIR = Path(__file__).parent
-
+ROOT_DIR = APP_DIR.parent
 TRAINED_CROPS = {"Banana", "Brinjal", "Cabbage", "Garlic", "Green Chilli"}
 
-# ---------------------------------------------------------------------------
-# Styling
-# ---------------------------------------------------------------------------
-
-st.markdown(
-    """
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
-
-    html, body, [class*="css"] {
-        font-family: 'Poppins', sans-serif;
-    }
-
-    .stApp {
-        background: linear-gradient(160deg, #0f2818 0%, #1c3d24 35%, #2f5233 65%, #4a7c40 100%);
-        background-attachment: fixed;
-    }
-
-    .block-container {
-        max-width: 780px;
-        padding-top: 2rem;
-        padding-bottom: 3rem;
-    }
-
-    .app-header {
-        text-align: center;
-        padding: 1.6rem 1.2rem;
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.08);
-        backdrop-filter: blur(6px);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        margin-bottom: 1.6rem;
-    }
-
-    .app-header h1 {
-        color: #f4f9ec;
-        font-weight: 700;
-        margin-bottom: 0.3rem;
-        font-size: 2.1rem;
-    }
-
-    .app-header p {
-        color: #d9e8cd;
-        font-size: 0.95rem;
-        margin: 0;
-    }
-
-    @keyframes fadeInUp {
-        from { opacity: 0; transform: translateY(16px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-
-    @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-    }
-
-    @keyframes shimmer {
-        0% { background-position: -400px 0; }
-        100% { background-position: 400px 0; }
-    }
-
-    .app-header {
-        animation: fadeInUp 0.6s ease-out;
-    }
-
-    /* Style every bordered container (st.container(border=True)) as a glass card */
-    [data-testid="stVerticalBlockBorderWrapper"] {
-        background: rgba(255, 255, 255, 0.94) !important;
-        border-radius: 16px !important;
-        border: none !important;
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25) !important;
-        padding: 0.4rem 0.4rem !important;
-        animation: fadeInUp 0.55s ease-out both;
-        transition: transform 0.25s ease, box-shadow 0.25s ease;
-    }
-
-    [data-testid="stVerticalBlockBorderWrapper"]:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 14px 36px rgba(0, 0, 0, 0.32) !important;
-    }
-
-    /* stagger the card entrance animations */
-    div.element-container:nth-of-type(1) [data-testid="stVerticalBlockBorderWrapper"] { animation-delay: 0.05s; }
-    div.element-container:nth-of-type(2) [data-testid="stVerticalBlockBorderWrapper"] { animation-delay: 0.15s; }
-    div.element-container:nth-of-type(3) [data-testid="stVerticalBlockBorderWrapper"] { animation-delay: 0.25s; }
-    div.element-container:nth-of-type(4) [data-testid="stVerticalBlockBorderWrapper"] { animation-delay: 0.35s; }
-
-    .badge {
-        display: inline-block;
-        padding: 0.25rem 0.7rem;
-        border-radius: 999px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        margin-bottom: 0.6rem;
-        animation: fadeIn 0.8s ease-out;
-    }
-
-    .badge-supported { background: #dcf5e0; color: #1e7d32; }
-    .badge-limited { background: #fff2d9; color: #a15c00; }
-
-    .recommend-sell {
-        background: linear-gradient(135deg, #fde3e3, #ffd4d4);
-        color: #a11212;
-        border-radius: 12px;
-        padding: 1rem 1.2rem;
-        font-weight: 600;
-        font-size: 1.05rem;
-        animation: fadeInUp 0.5s ease-out;
-        box-shadow: 0 4px 14px rgba(161, 18, 18, 0.15);
-    }
-
-    .recommend-hold {
-        background: linear-gradient(135deg, #e0f5e4, #cdf0d6);
-        color: #1e7d32;
-        border-radius: 12px;
-        padding: 1rem 1.2rem;
-        font-weight: 600;
-        font-size: 1.05rem;
-        animation: fadeInUp 0.5s ease-out;
-        box-shadow: 0 4px 14px rgba(30, 125, 50, 0.15);
-    }
-
-    div[data-testid="stMetric"] {
-        background: rgba(0,0,0,0.03);
-        border-radius: 12px;
-        padding: 0.6rem 0.5rem;
-        transition: background 0.2s ease;
-    }
-
-    div[data-testid="stMetric"]:hover {
-        background: rgba(74, 124, 64, 0.1);
-    }
-
-    div[data-testid="stMetricValue"] {
-        animation: fadeIn 0.7s ease-out;
-    }
-
-    div[data-baseweb="select"] > div {
-        border-radius: 10px !important;
-    }
-
-    footer, header { visibility: hidden; }
-
-    .app-footer {
-        text-align: center;
-        color: #d9e8cd;
-        font-size: 0.8rem;
-        margin-top: 1.5rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-st.markdown(
-    """
-    <div class="app-header">
-        <h1>🌾 Crop Price Crash Predictor</h1>
-        <p>Live price trends and crash-risk predictions across Indian mandis, powered by Agmarknet data.</p>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-# ---------------------------------------------------------------------------
-# Load data + model
-# ---------------------------------------------------------------------------
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+* { font-family: Inter, sans-serif; }
+.stApp { background: radial-gradient(circle at 10% 10%, rgba(54,170,91,.18), transparent 28%), radial-gradient(circle at 90% 15%, rgba(245,177,66,.13), transparent 25%), linear-gradient(135deg,#07140d 0%,#0d2417 42%,#102d1b 100%); background-attachment:fixed; }
+.block-container { max-width:1450px; padding:1.5rem 2rem 3rem; }
+header, footer, #MainMenu { visibility:hidden; }
+[data-testid="stSidebar"] { background:linear-gradient(180deg,#08170e,#102b19); border-right:1px solid rgba(255,255,255,.08); }
+[data-testid="stSidebar"] * { color:#eef8ee; }
+.hero { position:relative; overflow:hidden; padding:34px 38px; border:1px solid rgba(255,255,255,.12); border-radius:28px; background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.035)); backdrop-filter:blur(16px); box-shadow:0 25px 70px rgba(0,0,0,.28); animation:rise .8s ease-out; }
+.hero:before { content:""; position:absolute; width:280px; height:280px; right:-80px; top:-130px; border-radius:50%; background:rgba(108,214,124,.15); filter:blur(8px); animation:pulse 5s infinite; }
+.hero h1 { margin:0; color:#f4fff1; font-size:clamp(2rem,4vw,4rem); font-weight:800; letter-spacing:-2px; }
+.hero p { margin:9px 0 0; color:#b9d0bd; font-size:1.03rem; }
+.pill { display:inline-block; padding:7px 13px; border-radius:999px; background:rgba(106,211,117,.13); border:1px solid rgba(106,211,117,.3); color:#a9efb1; font-size:.78rem; font-weight:700; margin-bottom:13px; }
+.leaf { position:absolute; font-size:25px; opacity:.12; animation:float 8s ease-in-out infinite; }
+.leaf.one{left:5%;bottom:12%}.leaf.two{right:18%;top:15%;animation-delay:2s}.leaf.three{right:5%;bottom:8%;animation-delay:4s}
+.card { background:rgba(255,255,255,.965); border:1px solid rgba(255,255,255,.45); border-radius:22px; padding:22px; box-shadow:0 15px 45px rgba(0,0,0,.20); animation:rise .55s ease-out; }
+.card-dark { background:linear-gradient(145deg,rgba(255,255,255,.095),rgba(255,255,255,.035)); color:#f5fff4; border:1px solid rgba(255,255,255,.10); border-radius:22px; padding:22px; box-shadow:0 15px 45px rgba(0,0,0,.18); }
+.section-title { color:#eaffea; font-size:1.35rem; font-weight:800; margin:20px 0 10px; }
+.metric { background:linear-gradient(145deg,#ffffff,#f0f7f0); border-radius:18px; padding:18px; min-height:105px; border:1px solid #dbe9dc; box-shadow:0 8px 25px rgba(0,0,0,.08); transition:.25s; }
+.metric:hover { transform:translateY(-4px); box-shadow:0 15px 30px rgba(0,0,0,.14); }
+.metric .label { color:#66806b; font-size:.76rem; font-weight:700; text-transform:uppercase; letter-spacing:.6px; }
+.metric .value { color:#173d22; font-size:1.8rem; font-weight:800; margin-top:6px; }
+.risk-high { background:linear-gradient(135deg,#4b1114,#9e252b); color:white; border-radius:22px; padding:25px; box-shadow:0 12px 40px rgba(158,37,43,.32); animation:glowred 2.5s infinite; }
+.risk-medium { background:linear-gradient(135deg,#533b08,#a26d0c); color:white; border-radius:22px; padding:25px; box-shadow:0 12px 40px rgba(162,109,12,.25); }
+.risk-low { background:linear-gradient(135deg,#0d4522,#208a45); color:white; border-radius:22px; padding:25px; box-shadow:0 12px 40px rgba(32,138,69,.25); }
+.risk-title { font-size:1.65rem; font-weight:800; }
+.risk-sub { margin-top:5px; opacity:.88; }
+.stButton > button { border-radius:12px; border:0; background:linear-gradient(135deg,#2d9b4a,#176b31); color:white; font-weight:700; padding:.65rem 1rem; transition:.25s; }
+.stButton > button:hover { transform:translateY(-2px); box-shadow:0 8px 22px rgba(45,155,74,.28); }
+div[data-baseweb="select"] > div, div[data-baseweb="input"] > div { border-radius:12px !important; }
+[data-testid="stTabs"] button { color:#bcd2c0; font-weight:700; }
+[data-testid="stTabs"] button[aria-selected="true"] { color:#9bea9f; }
+@keyframes rise { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
+@keyframes pulse { 0%,100%{transform:scale(1);opacity:.5} 50%{transform:scale(1.25);opacity:.9} }
+@keyframes float { 0%,100%{transform:translateY(0) rotate(-8deg)} 50%{transform:translateY(-25px) rotate(8deg)} }
+@keyframes glowred { 0%,100%{box-shadow:0 12px 40px rgba(158,37,43,.28)} 50%{box-shadow:0 12px 55px rgba(235,58,68,.48)} }
+.small-note { color:#9db7a3; font-size:.82rem; }
+.footer { text-align:center; color:#78947e; padding:28px 0 5px; font-size:.8rem; }
+</style>
+""", unsafe_allow_html=True)
 
 @st.cache_resource
 def load_model():
-    model = joblib.load(APP_DIR / "crash_model_lite.pkl")
-    features = joblib.load(APP_DIR / "model_features.pkl")
-    threshold = joblib.load(APP_DIR / "crash_threshold.pkl")
-    return model, features, threshold
+    return (joblib.load(APP_DIR / "crash_model_lite.pkl"), joblib.load(APP_DIR / "model_features.pkl"), joblib.load(APP_DIR / "crash_threshold.pkl"))
 
 @st.cache_data
-def load_full_snapshot():
-    df = pd.read_csv(APP_DIR / "latest_snapshot.csv")
-    df["price_date"] = pd.to_datetime(df["price_date"])
-    return df
-
-@st.cache_data
-def load_all_crops_snapshot():
-    df = pd.read_csv(APP_DIR / "all_crops_snapshot.csv")
-    df["latest_date"] = pd.to_datetime(df["latest_date"])
-    return df
-
-@st.cache_data
-def load_price_history():
-    df = pd.read_csv(APP_DIR / "price_history.csv")
-    df["price_date"] = pd.to_datetime(df["price_date"])
-    return df
+ def load_csv(name, **kwargs):
+    return pd.read_csv(APP_DIR / name, **kwargs)
 
 model, FEATURES, THRESHOLD = load_model()
-full_snapshot = load_full_snapshot()
-all_snapshot = load_all_crops_snapshot()
-history = load_price_history()
+all_snapshot = load_csv("all_crops_snapshot.csv", parse_dates=["latest_date"])
+full_snapshot = load_csv("latest_snapshot.csv", parse_dates=["price_date"])
+history = load_csv("price_history.csv", parse_dates=["price_date"])
 
-# ---------------------------------------------------------------------------
-# Selection controls
-# ---------------------------------------------------------------------------
+try:
+    model_comparison = pd.read_csv(ROOT_DIR / "model_comparison.csv")
+except Exception:
+    model_comparison = pd.DataFrame()
+try:
+    threshold_comparison = pd.read_csv(ROOT_DIR / "threshold_comparison.csv")
+except Exception:
+    threshold_comparison = pd.DataFrame()
 
-with st.container(border=True):
-    col1, col2 = st.columns(2)
+st.markdown("""
+<div class="hero">
+<span class="pill">● ML MARKET INTELLIGENCE</span>
+<h1>🌾 Crop Price Crash Predictor</h1>
+<p>Explore Indian mandi prices, identify short-term crash risk, and understand the patterns behind the prediction.</p>
+<span class="leaf one">🌿</span><span class="leaf two">🍃</span><span class="leaf three">🌱</span>
+</div>
+""", unsafe_allow_html=True)
 
-    with col1:
-        commodity = st.selectbox("Crop", sorted(all_snapshot["commodity"].unique()))
-
+with st.sidebar:
+    st.markdown("## 🌾 Market Console")
+    st.caption("Choose a crop and mandi to explore the data.")
+    commodity = st.selectbox("Crop", sorted(all_snapshot["commodity"].dropna().unique()))
     filtered = all_snapshot[all_snapshot["commodity"] == commodity]
-
-    with col2:
-        state = st.selectbox("State", sorted(filtered["state"].unique()))
-
+    state = st.selectbox("State", sorted(filtered["state"].dropna().unique()))
     filtered = filtered[filtered["state"] == state]
+    market = st.selectbox("Mandi", sorted(filtered["market_name"].dropna().unique()))
+    st.divider()
+    st.markdown("### Model status")
+    if commodity in TRAINED_CROPS:
+        st.success("Prediction available")
+    else:
+        st.warning("Trend analysis only")
+    st.caption(f"Crash threshold: {THRESHOLD:.2f}")
+    st.caption("Model focus: 15%+ drop within 7 days")
 
-    market = st.selectbox("Market (Mandi)", sorted(filtered["market_name"].unique()))
+row = filtered[filtered["market_name"] == market].sort_values("latest_date").iloc[-1]
+hist = history[(history["commodity"] == commodity) & (history["state"] == state) & (history["market_name"] == market)].sort_values("price_date")
 
-row = filtered[filtered["market_name"] == market]
-
-if row.empty:
-    st.warning("No data available for this combination.")
-    st.stop()
-
-row = row.sort_values("latest_date").iloc[-1]
+latest_price = float(row["latest_price"])
+pct7 = row.get("pct_change_7d", None)
 is_supported = commodity in TRAINED_CROPS
 
-# ---------------------------------------------------------------------------
-# Current price snapshot
-# ---------------------------------------------------------------------------
+st.markdown('<div class="section-title">Market snapshot</div>', unsafe_allow_html=True)
+c1,c2,c3,c4 = st.columns(4)
+for col,label,value in [(c1,"Modal Price",f"₹{latest_price:,.0f}"),(c2,"7-Day Change",f"{pct7*100:.1f}%" if pd.notna(pct7) else "N/A"),(c3,"Latest Date",row["latest_date"].strftime("%d %b %Y")),(c4,"Records in View",f"{len(hist):,}")]:
+    col.markdown(f'<div class="metric"><div class="label">{label}</div><div class="value">{value}</div></div>', unsafe_allow_html=True)
 
-with st.container(border=True):
-    badge_class = "badge-supported" if is_supported else "badge-limited"
-    badge_text = "✅ Crash prediction supported" if is_supported else "⚠️ Limited data — price trend only"
-    st.markdown(f'<span class="badge {badge_class}">{badge_text}</span>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">Explore</div>', unsafe_allow_html=True)
+tab1, tab2, tab3, tab4 = st.tabs(["📈 Live Analysis", "🗺️ Market Explorer", "🤖 Model Lab", "ℹ️ About"])
 
-    st.subheader("Latest known price data")
-
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Modal Price (₹/Quintal)", f"{row['latest_price']:.0f}")
-
-    if pd.notna(row["pct_change_7d"]):
-        m2.metric("~7-day change", f"{row['pct_change_7d']*100:.1f}%")
-    else:
-        m2.metric("~7-day change", "N/A")
-
-    m3.metric("As of", row["latest_date"].strftime("%d %b %Y"))
-
-# ---------------------------------------------------------------------------
-# Price history chart (stock-style: min-max band + modal price line)
-# ---------------------------------------------------------------------------
-
-hist = history[
-    (history["commodity"] == commodity)
-    & (history["state"] == state)
-    & (history["market_name"] == market)
-].sort_values("price_date")
-
-with st.container(border=True):
-    st.subheader("90-day price trend")
-
-    if hist.empty or len(hist) < 2:
-        st.caption("Not enough history to chart this crop/market yet.")
-    else:
-        fig = go.Figure()
-
-        # min-max daily range band
-        fig.add_trace(go.Scatter(
-            x=pd.concat([hist["price_date"], hist["price_date"][::-1]]),
-            y=pd.concat([hist["max_price"], hist["min_price"][::-1]]),
-            fill="toself",
-            fillcolor="rgba(74, 124, 64, 0.12)",
-            line=dict(color="rgba(0,0,0,0)"),
-            hoverinfo="skip",
-            showlegend=False
-        ))
-
-        # gradient area under the modal price line
-        fig.add_trace(go.Scatter(
-            x=hist["price_date"],
-            y=hist["modal_price"],
-            mode="lines",
-            line=dict(color="#2f5233", width=3, shape="spline", smoothing=0.6),
-            fill="tozeroy",
-            fillcolor="rgba(74, 124, 64, 0.25)",
-            name="Modal Price",
-            hovertemplate="₹%{y:,.0f}<br>%{x|%d %b %Y}<extra></extra>"
-        ))
-
-        # highlight the latest point
-        fig.add_trace(go.Scatter(
-            x=[hist["price_date"].iloc[-1]],
-            y=[hist["modal_price"].iloc[-1]],
-            mode="markers",
-            marker=dict(size=10, color="#e8871e", line=dict(width=2, color="white")),
-            showlegend=False,
-            hoverinfo="skip"
-        ))
-
-        y_min = hist["min_price"].min()
-        y_max = hist["max_price"].max()
-        pad = (y_max - y_min) * 0.1 if y_max > y_min else y_max * 0.1
-
-        fig.update_layout(
-            height=340,
-            margin=dict(l=10, r=10, t=10, b=10),
-            xaxis=dict(showgrid=False, title=None),
-            yaxis=dict(
-                title="₹ / Quintal",
-                range=[max(0, y_min - pad), y_max + pad],
-                showgrid=True,
-                gridcolor="rgba(0,0,0,0.06)"
-            ),
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            showlegend=False,
-            hovermode="x unified",
-            transition=dict(duration=500, easing="cubic-in-out")
-        )
-
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        st.caption("Shaded band shows the daily min–max price range; the line shows the modal price.")
-
-# ---------------------------------------------------------------------------
-# Prediction + sell/hold recommendation
-# ---------------------------------------------------------------------------
-
-with st.container(border=True):
-    st.subheader("Prediction")
-
-    probability = None
-
-    if is_supported:
-        full_row = full_snapshot[
-            (full_snapshot["commodity"] == commodity)
-            & (full_snapshot["state"] == state)
-            & (full_snapshot["market_name"] == market)
-        ]
-
-        if full_row.empty:
-            st.info(
-                "This crop/market combination doesn't have enough recent price "
-                "history (needs at least 30 days of records) to compute a "
-                "reliable prediction."
-            )
+with tab1:
+    left,right = st.columns([1.8,1])
+    with left:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader("90-day price movement")
+        if len(hist) > 1:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=hist["price_date"], y=hist["max_price"], line=dict(width=0), showlegend=False, hoverinfo="skip"))
+            fig.add_trace(go.Scatter(x=hist["price_date"], y=hist["min_price"], fill="tonexty", fillcolor="rgba(72,170,91,.12)", line=dict(width=0), name="Daily range", hoverinfo="skip"))
+            fig.add_trace(go.Scatter(x=hist["price_date"], y=hist["modal_price"], mode="lines", line=dict(color="#2e9146",width=3), name="Modal price", hovertemplate="₹%{y:,.0f}<br>%{x|%d %b %Y}<extra></extra>"))
+            fig.add_trace(go.Scatter(x=[hist["price_date"].iloc[-1]], y=[hist["modal_price"].iloc[-1]], mode="markers", marker=dict(size=12,color="#f3a63b",line=dict(width=3,color="white")), showlegend=False))
+            fig.update_layout(height=390, margin=dict(l=5,r=5,t=10,b=5), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", hovermode="x unified", legend=dict(orientation="h"), xaxis=dict(showgrid=False), yaxis=dict(gridcolor="rgba(0,0,0,.06)",title="₹ / Quintal"))
+            st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
         else:
-            full_row = full_row.sort_values("price_date").iloc[-1]
-            X = pd.DataFrame([full_row[FEATURES]])
-            probability = model.predict_proba(X)[0, 1]
-            will_crash = probability >= THRESHOLD
-
-            if will_crash:
-                st.error(
-                    f"⚠️ **High crash risk** — estimated {probability*100:.1f}% probability "
-                    f"of a 15%+ price drop within 7 days."
-                )
+            st.info("Not enough history for this market.")
+        st.markdown('</div>', unsafe_allow_html=True)
+    with right:
+        if is_supported:
+            full_row = full_snapshot[(full_snapshot["commodity"]==commodity)&(full_snapshot["state"]==state)&(full_snapshot["market_name"]==market)]
+            if not full_row.empty:
+                full_row = full_row.sort_values("price_date").iloc[-1]
+                X = pd.DataFrame([full_row[FEATURES]])
+                probability = float(model.predict_proba(X)[0,1])
+                crash = probability >= THRESHOLD
+                if probability >= .55:
+                    risk="HIGH"; cls="risk-high"; icon="🚨"; text="Strong historical crash signal."
+                elif probability >= .40:
+                    risk="MEDIUM"; cls="risk-medium"; icon="⚠️"; text="Market should be monitored closely."
+                else:
+                    risk="LOW"; cls="risk-low"; icon="✅"; text="Lower historical crash risk."
+                st.markdown(f'<div class="{cls}"><div class="risk-title">{icon} {risk} RISK</div><div class="risk-sub">Estimated probability of a 15%+ drop: <b>{probability*100:.1f}%</b></div><div class="risk-sub">{text}</div></div>',unsafe_allow_html=True)
+                gauge=go.Figure(go.Indicator(mode="gauge+number",value=probability*100,number={"suffix":"%"},gauge={"axis":{"range":[0,100]},"bar":{"color":"#e34b51" if crash else "#2e9b4b"},"steps":[{"range":[0,40],"color":"#e6f5e9"},{"range":[40,55],"color":"#fff2cf"},{"range":[55,100],"color":"#fde2e2"}],"threshold":{"line":{"color":"#222","width":3},"value":THRESHOLD*100}}))
+                gauge.update_layout(height=230,margin=dict(l=10,r=10,t=15,b=0),paper_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(gauge,use_container_width=True,config={"displayModeBar":False})
+                st.caption("This is a historical-pattern signal, not a guaranteed price forecast.")
             else:
-                st.success(
-                    f"✅ **Low crash risk** — estimated {probability*100:.1f}% probability "
-                    f"of a 15%+ price drop within 7 days."
-                )
+                st.info("This market does not have the required model features.")
+        else:
+            st.markdown('<div class="card"><h3>📊 Trend mode</h3><p>This commodity is available for price exploration, but the current crash model was trained on five supported commodities: Banana, Brinjal, Cabbage, Garlic and Green Chilli.</p></div>',unsafe_allow_html=True)
 
-            gauge_color = "#c0392b" if will_crash else "#1e7d32"
+with tab2:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader("All-market view")
+    crop_view = all_snapshot[all_snapshot["commodity"]==commodity].copy().sort_values("latest_price",ascending=False).head(20)
+    fig = px.bar(crop_view, x="latest_price", y="market_name", color="latest_price", orientation="h", color_continuous_scale="Greens", labels={"latest_price":"Latest modal price (₹/Quintal)","market_name":"Mandi"})
+    fig.update_layout(height=650, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", coloraxis_showscale=False, margin=dict(l=10,r=10,t=10,b=10))
+    st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
+    st.dataframe(crop_view[["state","market_name","latest_price","latest_date"]].rename(columns={"state":"State","market_name":"Mandi","latest_price":"Modal Price","latest_date":"Date"}),use_container_width=True,hide_index=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-            gauge = go.Figure(go.Indicator(
-                mode="gauge+number",
-                value=probability * 100,
-                number={"suffix": "%", "font": {"size": 34, "color": gauge_color}},
-                gauge={
-                    "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#888"},
-                    "bar": {"color": gauge_color, "thickness": 0.3},
-                    "bgcolor": "white",
-                    "borderwidth": 0,
-                    "steps": [
-                        {"range": [0, 40], "color": "rgba(30,125,50,0.15)"},
-                        {"range": [40, 70], "color": "rgba(230,170,30,0.18)"},
-                        {"range": [70, 100], "color": "rgba(192,57,43,0.18)"}
-                    ],
-                    "threshold": {
-                        "line": {"color": gauge_color, "width": 3},
-                        "thickness": 0.8,
-                        "value": THRESHOLD * 100
-                    }
-                }
-            ))
-            gauge.update_layout(
-                height=220,
-                margin=dict(l=20, r=20, t=20, b=10),
-                paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#2f3e2a")
-            )
-            st.plotly_chart(gauge, use_container_width=True, config={"displayModeBar": False})
+with tab3:
+    a,b = st.columns(2)
+    with a:
+        st.markdown('<div class="card">',unsafe_allow_html=True)
+        st.subheader("Model comparison")
+        if not model_comparison.empty:
+            cols=[c for c in ["model","accuracy","precision","recall","f1","roc_auc"] if c in model_comparison.columns]
+            st.dataframe(model_comparison[cols],use_container_width=True,hide_index=True)
+            metric_col="f1" if "f1" in model_comparison.columns else model_comparison.columns[-1]
+            fig=px.bar(model_comparison,x="model",y=metric_col,title="Model F1 comparison")
+            fig.update_layout(height=300,margin=dict(l=5,r=5,t=45,b=5),paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)")
+            st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
+        else:
+            st.info("Model comparison file not available.")
+        st.markdown('</div>',unsafe_allow_html=True)
+    with b:
+        st.markdown('<div class="card">',unsafe_allow_html=True)
+        st.subheader("Threshold tuning")
+        if not threshold_comparison.empty:
+            st.dataframe(threshold_comparison,use_container_width=True,hide_index=True)
+            if "threshold" in threshold_comparison.columns and "f1" in threshold_comparison.columns:
+                fig=px.line(threshold_comparison,x="threshold",y="f1",markers=True,title="F1 score by threshold")
+                fig.update_layout(height=300,margin=dict(l=5,r=5,t=45,b=5),paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(fig,use_container_width=True,config={"displayModeBar":False})
+        else:
+            st.info("Threshold comparison file not available.")
+        st.markdown('</div>',unsafe_allow_html=True)
 
-            st.markdown("<br>", unsafe_allow_html=True)
-            if will_crash:
-                st.markdown(
-                    '<div class="recommend-sell">🔴 High risk — consider selling the crop now, '
-                    'before the price drops.</div>',
-                    unsafe_allow_html=True
-                )
-            else:
-                st.markdown(
-                    '<div class="recommend-hold">🟢 Low risk — it looks reasonably safe to hold '
-                    'the crop for now.</div>',
-                    unsafe_allow_html=True
-                )
-    else:
-        st.warning(
-            f"**Crash prediction isn't available for {commodity} yet.** "
-            "The model was trained only on Banana, Brinjal, Cabbage, Garlic, and "
-            "Green Chilli — the crops with enough historical price history in "
-            "this dataset to train a reliable model. Other crops are shown here "
-            "with their latest available price trend only, as a limited resource "
-            "until more training data is added."
-        )
+with tab4:
+    st.markdown('<div class="card">',unsafe_allow_html=True)
+    st.subheader("About this project")
+    st.write("This project uses historical Agmarknet mandi prices to identify short-term price-crash risk. A crash is defined as a 15% or larger fall in the minimum modal price observed during the following 7 calendar days.")
+    x,y,z=st.columns(3)
+    x.metric("Historical records",f"{len(history):,}")
+    y.metric("Commodities",f"{all_snapshot['commodity'].nunique()}")
+    z.metric("Markets",f"{all_snapshot['market_name'].nunique():,}")
+    st.markdown("### What the model uses")
+    st.write("Price lags, percentage changes, rolling averages, volatility, moving-average relationships, month and day-of-week features.")
+    st.markdown("### Important")
+    st.warning("The application is a student/research decision-support project. It does not account for weather, policy shocks, sudden supply changes, transport costs or real-time events, so its output should not be treated as a guaranteed selling instruction.")
+    st.markdown('</div>',unsafe_allow_html=True)
 
-with st.expander("How this works"):
-    st.write(
-        """
-        The crash-risk model is a Random Forest trained on historical
-        Agmarknet mandi price records for five crops (Banana, Brinjal,
-        Cabbage, Garlic, Green Chilli), using recent price momentum —
-        lags, rolling averages, and volatility — to estimate the
-        probability of a sharp (15%+) price drop within the following week.
-
-        All other crops and states from the Agmarknet dataset are still
-        browsable here for their latest price trend, but don't yet have a
-        trained crash model behind them.
-
-        **Note:** predictions are based on the most recent price data
-        available in the training set for this crop/market combination,
-        not live real-time prices. The sell/hold message is a simple guide,
-        not financial advice.
-        """
-    )
-
-# ---------------------------------------------------------------------------
-# AI assistant — answers questions about this app, this crop, prices, etc.
-# ---------------------------------------------------------------------------
-
-st.markdown("### 💬 Ask the assistant")
-
-api_key = st.secrets.get("ANTHROPIC_API_KEY", None)
-
-if not api_key:
-    st.info(
-        "The AI assistant isn't configured yet. To enable it, add your "
-        "Anthropic API key as `ANTHROPIC_API_KEY` in this app's "
-        "**Settings → Secrets** on Streamlit Cloud, then reload the app."
-    )
-else:
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=api_key)
-
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    context_note = (
-        f"Currently selected on the dashboard: crop={commodity}, state={state}, "
-        f"market={market}, latest modal price={row['latest_price']:.0f} INR/quintal, "
-        f"as of {row['latest_date'].strftime('%Y-%m-%d')}. "
-        + (
-            f"Crash-risk model estimate: {probability*100:.1f}% probability of a 15%+ "
-            f"price drop in the next 7 days."
-            if probability is not None
-            else "No crash-risk model is available for this crop."
-        )
-    )
-
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-    user_question = st.chat_input("Ask about this crop, this app, or crop prices in general...")
-
-    if user_question:
-        st.session_state.messages.append({"role": "user", "content": user_question})
-        with st.chat_message("user"):
-            st.markdown(user_question)
-
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                response = client.messages.create(
-                    model="claude-sonnet-5",
-                    max_tokens=600,
-                    system=(
-                        "You are a helpful assistant embedded in a Crop Price Crash "
-                        "Predictor web app for Indian agricultural markets (mandis). "
-                        "Answer questions about crop prices, market trends, farming "
-                        "economics, and this app's data and predictions. Be concise "
-                        "and practical. Here is the current app context: " + context_note
-                    ),
-                    messages=[
-                        {"role": m["role"], "content": m["content"]}
-                        for m in st.session_state.messages
-                    ]
-                )
-                answer = response.content[0].text
-                st.markdown(answer)
-
-        st.session_state.messages.append({"role": "assistant", "content": answer})
-
-st.markdown(
-    '<p class="app-footer">Data source: Agmarknet, Government of India · Model: Random Forest</p>',
-    unsafe_allow_html=True
-)
+st.markdown('<div class="footer">Built with Python · Pandas · Scikit-learn · Random Forest · Plotly · Streamlit · Agmarknet data</div>',unsafe_allow_html=True)
